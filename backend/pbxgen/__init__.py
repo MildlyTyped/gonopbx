@@ -44,6 +44,7 @@ Usage – registering a global AMI event plugin::
 
 from .ami import AMIEventDispatcher, AMIProxy, get_ami_plugins, register_ami_plugin
 from .interfaces import AMIPlugin, ConfigPlugin, DialplanPlugin, GenerationContext
+from .module import GonoPBXModule, ModuleRegistry, get_modules, module_registry, register_module
 from .pipeline import DialplanPipeline, get_registered_plugins, register_plugin
 
 __all__ = [
@@ -60,4 +61,10 @@ __all__ = [
     "AMIEventDispatcher",
     "register_ami_plugin",
     "get_ami_plugins",
+    # Module system
+    "GonoPBXModule",
+    "ModuleRegistry",
+    "module_registry",
+    "register_module",
+    "get_modules",
 ]

@@ -21,17 +21,18 @@ logger = logging.getLogger(__name__)
 import os
 from ami_client import AsteriskAMIClient
 from database import engine, Base
-from routers import peers, trunks, routes, dashboard, cdr, voicemail, callforward, groups, ivr, contacts
-from routers import auth as auth_router, users as users_router
-from routers import settings as settings_router
-from routers import audit as audit_router
-from routers import sip_debug as sip_debug_router
 from auth import get_password_hash, get_current_user
 from database import SessionLocal, User, SIPPeer, VoicemailMailbox, SystemSettings
 from voicemail_config import write_voicemail_config, reload_voicemail
 from email_config import write_msmtp_config
 from mqtt_client import mqtt_publisher
 from version import VERSION
+
+# Module system — importing this package registers all built-in modules with
+# the global module_registry as a side-effect.
+import modules  # noqa: F401
+from pbxgen.module import module_registry
+from pbxgen.ami import AMIProxy
 
 # Global AMI client instance
 ami_client = None
@@ -330,10 +331,9 @@ async def lifespan(app: FastAPI):
     # Initialize AMI client
     ami_client = AsteriskAMIClient()
     
-    # Set AMI client in dashboard and trunks router
-    dashboard.set_ami_client(ami_client)
-    trunks.set_ami_client(ami_client)
-    sip_debug_router.set_ami_client(ami_client)
+    # Build AMI proxy and notify all modules that need it
+    ami_proxy = AMIProxy(ami_client)
+    await module_registry.startup(ami_proxy)
     
     # Set broadcast callback
     ami_client.set_broadcast_callback(manager.broadcast)
@@ -354,6 +354,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down backend...")
+    await module_registry.shutdown()
     mqtt_publisher.disconnect()
     if ami_client:
         await ami_client.disconnect()
@@ -377,22 +378,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(auth_router.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(users_router.router, prefix="/api/users", tags=["Users"])
-app.include_router(peers.router, prefix="/api/peers", tags=["SIP Peers"])
-app.include_router(trunks.router, prefix="/api/trunks", tags=["SIP Trunks"])
-app.include_router(routes.router, prefix="/api/routes", tags=["Inbound Routes"])
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
-app.include_router(cdr.router, prefix="/api/cdr", tags=["Call Records"])
-app.include_router(voicemail.router, prefix="/api/voicemail", tags=["Voicemail"])
-app.include_router(callforward.router, prefix="/api/callforward", tags=["Call Forwarding"])
-app.include_router(groups.router, prefix="/api/groups", tags=["Ring Groups"])
-app.include_router(ivr.router, prefix="/api/ivr", tags=["IVR"])
-app.include_router(contacts.router, prefix="/api/contacts", tags=["Contacts"])
-app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
-app.include_router(audit_router.router, prefix="/api/audit", tags=["Audit"])
-app.include_router(sip_debug_router.router, prefix="/api/sip-debug", tags=["SIP Debug"])
+# Wire all module routers into the app via the module registry.
+module_registry.wire_routes(app)
 
 
 # Root endpoint
