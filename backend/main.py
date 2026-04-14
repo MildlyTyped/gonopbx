@@ -3,12 +3,15 @@ Asterisk PBX GUI - Backend API
 FastAPI application with Asterisk AMI integration
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+import uvicorn
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(
@@ -27,6 +30,10 @@ from voicemail_config import write_voicemail_config, reload_voicemail
 from email_config import write_msmtp_config
 from mqtt_client import mqtt_publisher
 from version import VERSION
+
+# Directory that contains the pre-built frontend SPA (populated by the
+# multi-stage Docker build).  Absent in pure backend dev mode.
+FRONTEND_DIST_DIR = Path(__file__).parent / "frontend_dist"
 
 # Module system — importing this package registers all built-in modules with
 # the global module_registry as a side-effect.
@@ -349,8 +356,48 @@ async def lifespan(app: FastAPI):
     await asyncio.sleep(2)
 
     logger.info("Backend startup complete")
-    
+
+    # ------------------------------------------------------------------
+    # Optional: secondary server that also serves the frontend SPA.
+    # Controlled by FRONTEND_PORT env var (default 80).  Set to 0 to disable.
+    # ------------------------------------------------------------------
+    class _NoSignalServer(uvicorn.Server):
+        """Uvicorn server variant that skips process-level signal handlers.
+
+        Used for the secondary frontend server so it does not conflict with
+        the primary server's signal handling.
+        """
+
+        def install_signal_handlers(self) -> None:
+            pass
+
+    frontend_server: Optional[_NoSignalServer] = None
+    frontend_task: Optional[asyncio.Task] = None
+
+    frontend_port = int(os.getenv("FRONTEND_PORT", "80"))
+    if frontend_port:
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=frontend_port,
+            log_level="info",
+            log_config=None,
+        )
+        frontend_server = _NoSignalServer(config)
+        frontend_task = asyncio.create_task(frontend_server.serve())
+        logger.info("Frontend server started on port %d", frontend_port)
+
     yield
+
+    # Shutdown frontend server first
+    if frontend_server is not None:
+        frontend_server.should_exit = True
+        if frontend_task is not None:
+            try:
+                await asyncio.wait_for(frontend_task, timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Frontend server did not shut down cleanly; cancelling task")
+                frontend_task.cancel()
     
     # Shutdown
     logger.info("Shutting down backend...")
@@ -382,13 +429,17 @@ app.add_middleware(
 module_registry.wire_routes(app)
 
 
-# Root endpoint
+# Root endpoint — serves the SPA index when the frontend has been built,
+# otherwise returns the API version payload (useful in pure-backend dev mode).
 @app.get("/")
 async def root():
-    """API root - health check"""
+    """Serve the SPA index page, or API version info when no frontend is built."""
+    from fastapi.responses import HTMLResponse
+    if module_registry._spa_index_html is not None:
+        return HTMLResponse(module_registry._spa_index_html)
     return {
         "name": "Asterisk PBX GUI API",
-        "version": "0.1.0",
+        "version": VERSION,
         "status": "running",
         "timestamp": datetime.utcnow().isoformat()
     }
@@ -517,6 +568,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
         manager.disconnect(websocket)
 
 
+# Wire static file hosting and the SPA catch-all.  This MUST be the last
+# route registration call so that the ``/{full_path:path}`` catch-all does
+# not shadow any real API endpoint defined above.
+module_registry.wire_static(app, FRONTEND_DIST_DIR)
+
+
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
