@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # Database import for CDR
 from database import SessionLocal, CDR
 from mqtt_client import mqtt_publisher
+from pbxgen.ami import AMIEventDispatcher
 
 
 class AsteriskAMIClient:
@@ -29,6 +30,9 @@ class AsteriskAMIClient:
         
         # Track active calls - key is Linkedid (unique per call)
         self.active_calls: Dict[str, Dict[str, Any]] = {}
+
+        # Plugin event dispatcher – dispatches to registered AMI plugins
+        self.dispatcher = AMIEventDispatcher(self)
         
         logger.info(f"AMI Client initialized for {self.host}:{self.port}")
 
@@ -58,6 +62,9 @@ class AsteriskAMIClient:
             # Register event handlers
             self.manager.register_event('*', self.handle_event)
 
+            # Notify AMI plugins that the connection is live
+            await self.dispatcher.on_startup()
+
             # Keep connection alive
             while self.connected:
                 await asyncio.sleep(1)
@@ -72,6 +79,8 @@ class AsteriskAMIClient:
 
     async def disconnect(self):
         """Disconnect from Asterisk AMI"""
+        # Notify AMI plugins before tearing down the connection
+        await self.dispatcher.on_shutdown()
         if self.manager:
             self.manager.close() if self.manager else None
             self.connected = False
@@ -113,6 +122,9 @@ class AsteriskAMIClient:
                     'event_name': event_name,
                     'active_calls': list(self.active_calls.values())
                 })
+
+        # Dispatch to registered AMI plugins (after core handling)
+        await self.dispatcher.dispatch(event_name, dict(event))
 
     async def handle_dial_begin(self, event):
         """Handle dial begin - this is when a call starts"""
