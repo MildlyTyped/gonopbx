@@ -1,3 +1,24 @@
+# ---------------------------------------------------------------------------
+# Stage 1: Build the frontend SPA
+# ---------------------------------------------------------------------------
+FROM node:20-alpine AS frontend-build
+
+ARG VITE_UI_LANG=de
+ENV VITE_UI_LANG=$VITE_UI_LANG
+
+WORKDIR /frontend
+
+# Install dependencies first (better layer caching)
+COPY frontend/package*.json ./
+RUN npm ci
+
+# Build the SPA
+COPY frontend/ ./
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Stage 2: Backend (Python)
+# ---------------------------------------------------------------------------
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -16,14 +37,17 @@ RUN apt-get update && apt-get install -y \
 RUN git config --global --add safe.directory /project
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY backend/ .
 
-# Expose port
-EXPOSE 8000
+# Embed the compiled frontend so the backend can serve it on FRONTEND_PORT
+COPY --from=frontend-build /frontend/dist /app/frontend_dist
+
+# Expose API port and frontend port
+EXPOSE 8000 80
 
 # Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
