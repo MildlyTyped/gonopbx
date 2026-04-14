@@ -21,6 +21,7 @@ To add a new module:
 
 from pbxgen.module import register_module
 
+from .core import CoreModule
 from .auth_module import AuthModule
 from .users import UsersModule
 from .peers import PeersModule
@@ -38,6 +39,9 @@ from .audit import AuditModule
 from .sip_debug import SIPDebugModule
 
 # Register all built-in modules with the global registry.
+# CoreModule is registered first so its explicit GET / route is added to the
+# app before the SPA catch-all registered by wire_static().
+register_module(CoreModule())
 register_module(AuthModule())
 register_module(UsersModule())
 register_module(PeersModule())
@@ -55,6 +59,7 @@ register_module(AuditModule())
 register_module(SIPDebugModule())
 
 __all__ = [
+    "CoreModule",
     "AuthModule",
     "UsersModule",
     "PeersModule",

@@ -3,13 +3,12 @@ Asterisk PBX GUI - Backend API
 FastAPI application with Asterisk AMI integration
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 import logging
 import uvicorn
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 import os
 from ami_client import AsteriskAMIClient
 from database import engine, Base
-from auth import get_password_hash, get_current_user
+from auth import get_password_hash
 from database import SessionLocal, User, SIPPeer, VoicemailMailbox, SystemSettings
 from voicemail_config import write_voicemail_config, reload_voicemail
 from email_config import write_msmtp_config
@@ -43,38 +42,6 @@ from pbxgen.ami import AMIProxy
 
 # Global AMI client instance
 ami_client = None
-
-
-# WebSocket connections manager
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: list[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-        logger.info(f"WebSocket connected. Total connections: {len(self.active_connections)}")
-
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-        logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
-
-    async def broadcast(self, message: dict):
-        """Broadcast message to all connected clients"""
-        disconnected = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except Exception as e:
-                logger.error(f"Error broadcasting to client: {e}")
-                disconnected.append(connection)
-        
-        # Remove disconnected clients
-        for conn in disconnected:
-            self.disconnect(conn)
-
-manager = ConnectionManager()
 
 
 # Lifecycle management
@@ -342,9 +309,6 @@ async def lifespan(app: FastAPI):
     ami_proxy = AMIProxy(ami_client)
     await module_registry.startup(ami_proxy)
     
-    # Set broadcast callback
-    ami_client.set_broadcast_callback(manager.broadcast)
-    
     # Connect MQTT publisher if not already configured from DB settings
     if not mqtt_publisher.connected and mqtt_publisher.enabled:
         mqtt_publisher.connect()
@@ -427,146 +391,6 @@ app.add_middleware(
 
 # Wire all module routers into the app via the module registry.
 module_registry.wire_routes(app)
-
-
-# Root endpoint — serves the SPA index when the frontend has been built,
-# otherwise returns the API version payload (useful in pure-backend dev mode).
-@app.get("/")
-async def root():
-    """Serve the SPA index page, or API version info when no frontend is built."""
-    from fastapi.responses import HTMLResponse
-    if module_registry._spa_index_html is not None:
-        return HTMLResponse(module_registry._spa_index_html)
-    return {
-        "name": "Asterisk PBX GUI API",
-        "version": VERSION,
-        "status": "running",
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-
-# Health check
-@app.get("/api/health")
-async def health_check():
-    """System health check"""
-    global ami_client
-    
-    asterisk_status = "disconnected"
-    if ami_client and ami_client.connected:
-        asterisk_status = "connected"
-    
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "services": {
-            "api": "running",
-            "asterisk": asterisk_status,
-            "database": "connected"
-        }
-    }
-
-
-from pydantic import BaseModel
-
-
-class OriginateRequest(BaseModel):
-    extension: str
-    number: str
-
-
-# Originate a call (used by Home Assistant integration)
-@app.post("/api/calls/originate")
-async def originate_call(
-    req: OriginateRequest,
-    current_user: User = Depends(get_current_user),
-):
-    """Originate a call: rings the extension first, then dials the number."""
-    global ami_client
-
-    if not ami_client or not ami_client.connected:
-        raise HTTPException(status_code=503, detail="Asterisk not connected")
-
-    try:
-        response = await ami_client.send_action(
-            'Originate',
-            Channel=f'PJSIP/{req.extension}',
-            Exten=req.number,
-            Context='from-internal',
-            Priority='1',
-            CallerID=req.extension,
-            Timeout='30000',
-            Async='true',
-        )
-        return {"status": "ok", "message": f"Calling {req.number} from {req.extension}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Active calls endpoint
-@app.get("/api/calls/active")
-async def get_active_calls(current_user: User = Depends(get_current_user)):
-    """Get currently active calls"""
-    global ami_client
-    
-    if ami_client and ami_client.connected:
-        calls = await ami_client.get_active_channels()
-        return {
-            "calls": calls,
-            "count": len(calls),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    
-    return {
-        "calls": [],
-        "count": 0,
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-
-# WebSocket endpoint for live updates
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
-    """WebSocket connection for real-time updates"""
-    # Validate token for WebSocket connections
-    if token:
-        from jose import JWTError, jwt as jose_jwt
-        from auth import JWT_SECRET, JWT_ALGORITHM
-        try:
-            jose_jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except JWTError:
-            await websocket.close(code=4001)
-            return
-    else:
-        await websocket.close(code=4001)
-        return
-
-    await manager.connect(websocket)
-    
-    try:
-        await websocket.send_json({
-            "type": "connection",
-            "status": "connected",
-            "timestamp": datetime.utcnow().isoformat()
-        })
-        
-        if ami_client:
-            calls = await ami_client.get_active_channels()
-            await websocket.send_json({
-                "type": "active_calls",
-                "active_calls": calls,
-                "timestamp": datetime.utcnow().isoformat()
-            })
-        
-        while True:
-            data = await websocket.receive_text()
-            logger.info(f"Received WebSocket message: {data}")
-            
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        manager.disconnect(websocket)
-
 
 # Wire static file hosting and the SPA catch-all.  This MUST be the last
 # route registration call so that the ``/{full_path:path}`` catch-all does
