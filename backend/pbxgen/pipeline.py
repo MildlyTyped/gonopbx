@@ -86,26 +86,40 @@ class DialplanPipeline:
         """
         dialplan = Dialplan()
         ops = DialplanOps(dialplan)
+        errors: list = []
 
         # Phase 1: contribute
         for plugin in self.plugins:
             try:
                 plugin.contribute(ops, gen_ctx)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Error in contribute phase of plugin %s",
                     type(plugin).__name__,
                 )
+                errors.append((type(plugin).__name__, "contribute", exc))
 
         # Phase 2: patch
         for plugin in self.plugins:
             try:
                 plugin.patch(ops, gen_ctx)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Error in patch phase of plugin %s",
                     type(plugin).__name__,
                 )
+                errors.append((type(plugin).__name__, "patch", exc))
+
+        if errors:
+            summary = ", ".join(
+                f"{name}.{phase}" for name, phase, _ in errors
+            )
+            logger.warning(
+                "Dialplan pipeline completed with %d plugin error(s): %s. "
+                "The generated dialplan may be incomplete.",
+                len(errors),
+                summary,
+            )
 
         # Phase 3: render
         return render_dialplan(dialplan)
