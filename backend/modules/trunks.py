@@ -15,4 +15,4 @@ class TrunksModule(GonoPBXModule):
 
     async def on_module_startup(self, ami: AMIProxy) -> None:
         """Wire the underlying AMI client into the trunks router."""
-        _trunks_router.set_ami_client(ami._client)
+        _trunks_router.set_ami_client(ami.client)

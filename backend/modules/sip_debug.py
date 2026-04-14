@@ -15,4 +15,4 @@ class SIPDebugModule(GonoPBXModule):
 
     async def on_module_startup(self, ami: AMIProxy) -> None:
         """Wire the underlying AMI client into the SIP debug router."""
-        _sip_debug_router.set_ami_client(ami._client)
+        _sip_debug_router.set_ami_client(ami.client)

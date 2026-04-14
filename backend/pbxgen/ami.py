@@ -117,6 +117,18 @@ class AMIProxy:
         """Whether the AMI client is currently connected."""
         return getattr(self._client, "connected", False)
 
+    @property
+    def client(self) -> Any:
+        """The underlying :class:`~ami_client.AsteriskAMIClient` instance.
+
+        Use sparingly — prefer :meth:`send_action` and
+        :meth:`get_active_channels` for all AMI interactions.  This property
+        exists to allow modules that need to pass the raw client to legacy
+        helper functions (e.g. ``set_ami_client``) without accessing a
+        private attribute.
+        """
+        return self._client
+
     async def send_action(self, action: str, **kwargs: Any) -> Dict[str, Any]:
         """Send an AMI action and return the response dict.
 

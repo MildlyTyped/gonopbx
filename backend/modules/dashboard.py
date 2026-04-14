@@ -15,4 +15,4 @@ class DashboardModule(GonoPBXModule):
 
     async def on_module_startup(self, ami: AMIProxy) -> None:
         """Wire the underlying AMI client into the dashboard router."""
-        _dashboard_router.set_ami_client(ami._client)
+        _dashboard_router.set_ami_client(ami.client)
