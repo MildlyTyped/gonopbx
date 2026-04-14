@@ -339,7 +339,7 @@ async def lifespan(app: FastAPI):
     frontend_task: Optional[asyncio.Task] = None
 
     frontend_port = int(os.getenv("FRONTEND_PORT", "80"))
-    if frontend_port:
+    if frontend_port > 0:
         config = uvicorn.Config(
             app,
             host="0.0.0.0",
