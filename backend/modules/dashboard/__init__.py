@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
 from pbxgen.ami import AMIProxy
-import routers.dashboard as _dashboard_router
+from . import router as _dashboard_router
 
 
 class DashboardModule(GonoPBXModule):

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
-import routers.audit as _audit_router
+from . import router as _audit_router
 
 
 class AuditModule(GonoPBXModule):

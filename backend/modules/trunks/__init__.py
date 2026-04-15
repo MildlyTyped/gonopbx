@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
 from pbxgen.ami import AMIProxy
-import routers.trunks as _trunks_router
+from . import router as _trunks_router
 
 
 class TrunksModule(GonoPBXModule):

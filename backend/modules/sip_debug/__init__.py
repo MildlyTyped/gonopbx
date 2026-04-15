@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
 from pbxgen.ami import AMIProxy
-import routers.sip_debug as _sip_debug_router
+from . import router as _sip_debug_router
 
 
 class SIPDebugModule(GonoPBXModule):

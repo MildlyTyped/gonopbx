@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
-import routers.cdr as _cdr_router
+from . import router as _cdr_router
 
 
 class CDRModule(GonoPBXModule):

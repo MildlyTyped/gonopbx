@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
-import routers.voicemail as _voicemail_router
+from . import router as _voicemail_router
 
 
 class VoicemailModule(GonoPBXModule):

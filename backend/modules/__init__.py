@@ -11,18 +11,20 @@ is all that is required before calling
 
 To add a new module:
 
-1. Create a file in this package (e.g. ``modules/recording.py``).
-2. Define a class that inherits from :class:`~pbxgen.module.GonoPBXModule`
-   (optionally also implement :class:`~pbxgen.interfaces.DialplanPlugin`
-   and/or :class:`~pbxgen.interfaces.AMIPlugin`).
-3. Instantiate the class and pass it to :func:`~pbxgen.module.register_module`.
-4. Import the new file here.
+1. Create a sub-package in this directory (e.g. ``modules/recording/``).
+2. Add a ``router.py`` with the FastAPI ``APIRouter`` and endpoint handlers.
+3. Add an ``__init__.py`` that defines a class inheriting from
+   :class:`~pbxgen.module.GonoPBXModule` (optionally also implement
+   :class:`~pbxgen.interfaces.DialplanPlugin` and/or
+   :class:`~pbxgen.interfaces.AMIPlugin`).
+4. Import the new module class here and register it with
+   :func:`~pbxgen.module.register_module`.
 """
 
 from pbxgen.module import register_module
 
 from .core import CoreModule
-from .auth_module import AuthModule
+from .auth import AuthModule
 from .users import UsersModule
 from .peers import PeersModule
 from .trunks import TrunksModule

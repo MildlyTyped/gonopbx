@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from pbxgen.module import GonoPBXModule
 from pbxgen.ami import AMIProxy
-import routers.core as _core_router
+from . import router as _core_router
 
 
 class CoreModule(GonoPBXModule):

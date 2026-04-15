@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
-import routers.peers as _peers_router
+from . import router as _peers_router
 
 
 class PeersModule(GonoPBXModule):

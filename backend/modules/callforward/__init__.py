@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
-import routers.callforward as _callforward_router
+from . import router as _callforward_router
 
 
 class CallForwardModule(GonoPBXModule):

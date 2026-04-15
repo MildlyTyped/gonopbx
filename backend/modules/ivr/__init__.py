@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 from pbxgen.module import GonoPBXModule
-import routers.ivr as _ivr_router
+from . import router as _ivr_router
 
 
 class IVRModule(GonoPBXModule):
